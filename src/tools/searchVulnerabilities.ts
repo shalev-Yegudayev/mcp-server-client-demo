@@ -1,14 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { SEVERITIES, STATUSES } from '../store.js';
-import type { Store, Vulnerability } from '../store.js';
+import type { Store } from '../store.js';
 import { safeHandlerWithRateLimit, shapeVulnerability } from './helpers.js';
 
 const DEFAULT_LIMIT = 25;
 
-const inputSchema = z
-  .object({
-    severity: z.enum(SEVERITIES).optional(),
+const inputSchema = z.object({
+  severity: z.enum(SEVERITIES).optional(),
     status: z.enum(STATUSES).optional(),
     vendor_id: z.string().min(1).max(128).optional(),
     min_cvss: z.number().min(0).max(10).optional(),
@@ -43,6 +42,8 @@ const inputSchema = z
     },
   );
 
+type Input = z.infer<typeof inputSchema>;
+
 export function registerSearchVulnerabilities(server: McpServer, store: Store): void {
   server.registerTool(
     'search_vulnerabilities',
@@ -58,24 +59,13 @@ export function registerSearchVulnerabilities(server: McpServer, store: Store): 
         idempotentHint: true,
       },
     },
-    safeHandlerWithRateLimit(
-      (args: {
-        severity?: (typeof import('../store.js').SEVERITIES)[number];
-        status?: (typeof import('../store.js').STATUSES)[number];
-        vendor_id?: string;
-        min_cvss?: number;
-        max_cvss?: number;
-        published_from?: string;
-        published_to?: string;
-        offset?: number;
-        limit?: number;
-      }) => {
+    safeHandlerWithRateLimit((args: Input) => {
         const offset = args.offset ?? 0;
         const limit = args.limit ?? DEFAULT_LIMIT;
         const pool = args.vendor_id
           ? (store.vulnsByVendorId.get(args.vendor_id) ?? [])
           : store.vulnerabilities;
-        const matched = pool.filter((v: Vulnerability) => {
+        const matched = pool.filter((v) => {
           if (args.severity && v.severity !== args.severity) return false;
           if (args.status && v.status !== args.status) return false;
           if (args.min_cvss !== undefined && v.cvss_score < args.min_cvss) return false;
@@ -94,7 +84,6 @@ export function registerSearchVulnerabilities(server: McpServer, store: Store): 
           limit,
           results,
         };
-      },
-    ),
+      }),
   );
 }

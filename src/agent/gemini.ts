@@ -9,6 +9,11 @@ interface Tool {
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
+// 8 KB ≈ 2k tokens at ~4 bytes/token; keeps Gemini context manageable per tool call.
+const MAX_TOOL_RESULT_BYTES = 8192;
+
+const MAX_ITERATIONS = 10;
+
 function buildFunctionDeclarations(tools: Tool[]): FunctionDeclaration[] {
   return tools.map((tool) => ({
     name: tool.name,
@@ -18,116 +23,63 @@ function buildFunctionDeclarations(tools: Tool[]): FunctionDeclaration[] {
   }));
 }
 
-// Prevent cost explosion and context overflow from large tool results
-const MAX_RESULT_SIZE_BYTES = 8192; // ~2000 tokens
+function truncateIfNeeded(toolName: string, result: unknown): unknown {
+  const json = JSON.stringify(result);
+  const bytes = Buffer.byteLength(json, 'utf8');
+  if (bytes <= MAX_TOOL_RESULT_BYTES) return result;
 
-function truncateResultIfNeeded(
-  toolName: string,
-  result: unknown,
-): { result: unknown; wasTruncated: boolean } {
-  const resultStr = JSON.stringify(result);
-  const sizeBytes = Buffer.byteLength(resultStr, 'utf8');
+  console.warn(`Tool ${toolName} returned ${bytes} bytes (max ${MAX_TOOL_RESULT_BYTES}). Truncating.`);
 
-  if (sizeBytes > MAX_RESULT_SIZE_BYTES) {
-    console.warn(
-      `Tool ${toolName} returned ${sizeBytes} bytes (max ${MAX_RESULT_SIZE_BYTES}). Truncating.`,
-    );
-
-    // If it's an array, return first 5 items with count
-    if (Array.isArray(result)) {
-      return {
-        result: {
-          truncated: true,
-          totalItems: result.length,
-          message: `Result contained ${result.length} items. Showing first 5. Use pagination to refine your query.`,
-          items: result.slice(0, 5),
-        },
-        wasTruncated: true,
-      };
-    }
-
-    // Otherwise return a warning
+  if (Array.isArray(result)) {
     return {
-      result: {
-        truncated: true,
-        message: `Result was too large (${Math.round(sizeBytes / 1024)}KB). Please use more specific filters or pagination.`,
-        sampleSize: Math.min(500, sizeBytes),
-      },
-      wasTruncated: true,
+      truncated: true,
+      totalItems: result.length,
+      message: `Result contained ${result.length} items. Showing first 5. Use pagination to refine your query.`,
+      items: result.slice(0, 5),
     };
   }
 
-  return { result, wasTruncated: false };
+  return {
+    truncated: true,
+    message: `Result was too large (${Math.round(bytes / 1024)}KB). Please use more specific filters or pagination.`,
+  };
 }
 
 export async function ask(question: string, mcpClient: McpClient): Promise<string> {
   const tools = await mcpClient.listTools();
-  const functionDeclarations = buildFunctionDeclarations(tools);
 
   const model = gemini.getGenerativeModel({
     model: 'gemini-1.5-flash',
-    tools: [{ functionDeclarations }],
+    tools: [{ functionDeclarations: buildFunctionDeclarations(tools) }],
   });
 
-  const chat = model.startChat({
-    history: [],
-  });
-
-  let iteration = 0;
-  const maxIterations = 10;
+  const chat = model.startChat({ history: [] });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let response: any = await chat.sendMessage(question);
 
-  while (iteration < maxIterations) {
+  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     const functionCalls = response.functionCalls();
-    if (!functionCalls || functionCalls.length === 0) {
-      break;
-    }
+    if (!functionCalls || functionCalls.length === 0) break;
 
-    iteration++;
-
-    // Execute all function calls in parallel
     const toolResults = await Promise.all(
       functionCalls.map(async (call: { name: string; args: Record<string, unknown> }) => {
         try {
           const result = await mcpClient.callTool(call.name, call.args);
-          const { result: truncated, wasTruncated } = truncateResultIfNeeded(call.name, result);
-          return {
-            name: call.name,
-            result: truncated,
-            truncated: wasTruncated,
-          };
+          return { name: call.name, response: truncateIfNeeded(call.name, result) };
         } catch (error) {
-          return {
-            name: call.name,
-            error: String(error),
-          };
+          return { name: call.name, response: { error: String(error) } };
         }
       }),
     );
 
-    // Send tool results back to Gemini
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     response = await chat.sendMessage(
-      toolResults.map(
-        (tr) =>
-          ({
-            functionResponse: {
-              name: tr.name,
-              response: tr.result || { error: tr.error },
-            },
-          }) as any,
-      ),
+      toolResults.map((tr) => ({ functionResponse: { name: tr.name, response: tr.response } }) as any),
     );
   }
 
-  if (iteration >= maxIterations) {
-    return (
-      response.text() +
-      '\n\n[Note: Query required too many steps. Some analysis may be incomplete.]'
-    );
-  }
-
-  return response.text();
+  const text = response.text();
+  const hitLimit = response.functionCalls()?.length > 0;
+  return hitLimit ? text + '\n\n[Note: Query required too many steps. Some analysis may be incomplete.]' : text;
 }

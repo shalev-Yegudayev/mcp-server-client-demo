@@ -17,6 +17,41 @@ export class ParseError extends Error {
   }
 }
 
+function parseFormat(spec: string, lineNo: number): string[] {
+  if (!spec) throw new ParseError('Empty FORMAT specification.', lineNo);
+  const columns = spec.split('|').map((c) => c.trim());
+  if (columns.some((c) => c === '')) {
+    throw new ParseError('FORMAT contains an empty column name.', lineNo);
+  }
+  if (new Set(columns).size !== columns.length) {
+    throw new ParseError('FORMAT contains duplicate column names.', lineNo);
+  }
+  return columns;
+}
+
+function parseVersion(raw: string, lineNo: number): string {
+  if (!/^\d+\.\d+$/.test(raw)) {
+    throw new ParseError(`Invalid VERSION format: "${raw}" (expected x.y).`, lineNo);
+  }
+  return raw;
+}
+
+function parseRow(
+  trimmed: string,
+  columns: string[],
+  lineNo: number,
+): Record<string, string> {
+  const fields = trimmed.split('|');
+  if (fields.length !== columns.length) {
+    throw new ParseError(`Expected ${columns.length} columns, got ${fields.length}.`, lineNo);
+  }
+  const row: Record<string, string> = {};
+  for (let c = 0; c < columns.length; c++) {
+    row[columns[c]] = fields[c];
+  }
+  return row;
+}
+
 export function parseDbFile(raw: string): ParsedDb {
   const lines = raw.split(/\r?\n/);
   let columns: string[] | null = null;
@@ -24,49 +59,26 @@ export function parseDbFile(raw: string): ParsedDb {
   const rows: Record<string, string>[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+    const trimmed = lines[i].trim();
     const lineNo = i + 1;
 
-    if (trimmed === '') continue;
+    if (trimmed === '' || (trimmed.startsWith('#') && !trimmed.startsWith(FORMAT_PREFIX) && !trimmed.startsWith(VERSION_PREFIX))) continue;
 
     if (trimmed.startsWith(FORMAT_PREFIX)) {
-      const spec = trimmed.slice(FORMAT_PREFIX.length).trim();
-      if (!spec) throw new ParseError('Empty FORMAT specification.', lineNo);
-      columns = spec.split('|').map((c) => c.trim());
-      if (columns.some((c) => c === '')) {
-        throw new ParseError('FORMAT contains an empty column name.', lineNo);
-      }
-      if (new Set(columns).size !== columns.length) {
-        throw new ParseError('FORMAT contains duplicate column names.', lineNo);
-      }
+      columns = parseFormat(trimmed.slice(FORMAT_PREFIX.length).trim(), lineNo);
       continue;
     }
 
     if (trimmed.startsWith(VERSION_PREFIX)) {
-      version = trimmed.slice(VERSION_PREFIX.length).trim();
-      if (!/^\d+\.\d+$/.test(version)) {
-        throw new ParseError(`Invalid VERSION format: "${version}" (expected x.y).`, lineNo);
-      }
+      version = parseVersion(trimmed.slice(VERSION_PREFIX.length).trim(), lineNo);
       continue;
     }
-
-    if (trimmed.startsWith('#')) continue;
 
     if (columns === null) {
       throw new ParseError('Data row encountered before FORMAT metadata.', lineNo);
     }
 
-    const fields = trimmed.split('|');
-    if (fields.length !== columns.length) {
-      throw new ParseError(`Expected ${columns.length} columns, got ${fields.length}.`, lineNo);
-    }
-
-    const row: Record<string, string> = {};
-    for (let c = 0; c < columns.length; c++) {
-      row[columns[c]] = fields[c];
-    }
-    rows.push(row);
+    rows.push(parseRow(trimmed, columns, lineNo));
   }
 
   if (columns === null) throw new ParseError('Missing FORMAT metadata.');

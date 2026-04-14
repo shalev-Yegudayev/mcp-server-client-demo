@@ -1,16 +1,6 @@
-/**
- * Sanitization module for detecting and mitigating prompt injection attacks.
- *
- * Threat model: Attackers can inject arbitrary instructions into free-text fields
- * (CVE titles, version ranges, vendor names) in .db files. These fields are returned
- * to LLM clients (Claude, Ollama, etc.) and could influence LLM behavior if not sanitized.
- *
- * Strategy:
- * 1. Detect suspicious keywords (jailbreaks, instruction overrides, etc.)
- * 2. Remove control characters and problematic Unicode
- * 3. Log suspicious content for audit
- * 4. Return sanitized content (or redacted if suspicious)
- */
+// Threat model: attackers who control .db files can embed instructions in free-text fields
+// (CVE titles, version ranges, vendor names) that get forwarded to LLM clients.
+// This module detects and redacts such content before it leaves the server.
 
 // Common jailbreak and instruction-override keywords
 const SUSPICIOUS_PATTERNS = [
@@ -60,48 +50,12 @@ const SUSPICIOUS_PATTERNS = [
   /pretend\s+you/i,
 ];
 
-// Control characters and suspicious Unicode to remove
-const SUSPICIOUS_UNICODE = [
-  '\u0000', // Null byte
-  '\u0001', // Start of heading
-  '\u0002', // Start of text
-  '\u0003', // End of text
-  '\u0004', // End of transmission
-  '\u0005', // Enquiry
-  '\u0006', // Acknowledge
-  '\u0007', // Bell
-  '\u0008', // Backspace
-  '\u000B', // Vertical tab
-  '\u000C', // Form feed
-  '\u000E', // Shift out
-  '\u000F', // Shift in
-  '\u0010', // Data link escape
-  '\u0011', // Device control 1 (XON)
-  '\u0012', // Device control 2
-  '\u0013', // Device control 3 (XOFF)
-  '\u0014', // Device control 4
-  '\u0015', // Negative acknowledge
-  '\u0016', // Synchronous idle
-  '\u0017', // End of transmission block
-  '\u0018', // Cancel
-  '\u0019', // End of medium
-  '\u001A', // Substitute
-  '\u001B', // Escape
-  '\u007F', // Delete
-
-  // Bidirectional text override characters
-  '\u202E', // Right-to-left override
-  '\u202D', // Left-to-right override
-  '\u061C', // Arabic letter mark
-  '\u200E', // Left-to-right mark
-  '\u200F', // Right-to-left mark
-
-  // Zero-width characters (can hide text)
-  '\u200B', // Zero-width space
-  '\u200C', // Zero-width non-joiner
-  '\u200D', // Zero-width joiner
-  '\uFEFF', // Zero-width no-break space
-];
+// Compiled regex covering:
+// - ASCII control chars (except tab \u0009, newline \u000A, carriage return \u000D)
+// - Bidirectional overrides (\u202D, \u202E, \u061C, \u200E, \u200F)
+// - Zero-width characters (\u200B-\u200D, \uFEFF)
+const SUSPICIOUS_UNICODE_RE =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001B\u007F\u061C\u200B-\u200F\u202D\u202E\uFEFF]/g;
 
 export interface SanitizationResult {
   cleaned: string;
@@ -135,23 +89,16 @@ export function sanitizeForLLM(input: string): SanitizationResult {
     }
   }
 
-  // Step 2: Normalize Unicode (NFC form) to prevent homograph attacks
+  // Normalize Unicode (NFC) to prevent homograph attacks
   cleaned = cleaned.normalize('NFC');
 
-  // Step 3: Remove suspicious Unicode characters
-  for (const char of SUSPICIOUS_UNICODE) {
-    if (cleaned.includes(char)) {
-      issues.push(
-        `Detected suspicious Unicode character: U+${char.charCodeAt(0).toString(16).toUpperCase()}`,
-      );
-      suspicious = true;
-      cleaned = cleaned.replace(new RegExp(char, 'g'), '');
-    }
+  // Remove control chars, bidi overrides, and zero-width characters in one pass
+  if (SUSPICIOUS_UNICODE_RE.test(cleaned)) {
+    issues.push('Detected suspicious Unicode characters (control chars, bidi overrides, or zero-width)');
+    suspicious = true;
+    SUSPICIOUS_UNICODE_RE.lastIndex = 0; // reset stateful regex after test()
+    cleaned = cleaned.replace(SUSPICIOUS_UNICODE_RE, '');
   }
-
-  // Step 4: Remove all other control characters (ASCII 0-31 except tab, newline, carriage return)
-  // We keep tabs and newlines as they're generally safe
-  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 
   // Step 5: If suspicious content detected, redact the entire field
   if (suspicious) {
@@ -190,8 +137,6 @@ export function logSuspiciousContent(
   originalContent: string,
   issues: string[],
 ): void {
-  // This would normally write to an audit log
-  // For now, we'll use console.warn which can be captured
   console.warn('[SECURITY] Suspicious content detected', {
     fieldName,
     contentPreview: originalContent.slice(0, 100),
@@ -199,13 +144,4 @@ export function logSuspiciousContent(
     issues,
     timestamp: new Date().toISOString(),
   });
-
-  // TODO: In production, write to append-only audit log:
-  // logger.warn({
-  //   event: 'suspicious_content_detected',
-  //   fieldName,
-  //   contentHash: crypto.createHash('sha256').update(originalContent).digest('hex'),
-  //   issues,
-  //   timestamp: new Date().toISOString(),
-  // });
 }

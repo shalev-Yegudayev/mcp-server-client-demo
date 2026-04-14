@@ -1,0 +1,10 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint"],
+  "extends": ["plugin:@typescript-eslint/recommended"],
+  "rules": {
+    "no-console": ["error", { "allow": ["error"] }]
+  },
+  "ignorePatterns": ["dist/", "node_modules/"]
+}

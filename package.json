@@ -1,0 +1,49 @@
+{
+  "name": "vulnerability-registry-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing the legacy vulnerability registry (vendors.db, vulnerabilities.db) as tools for any MCP-compatible client.",
+  "type": "module",
+  "bin": {
+    "vulnerability-registry-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/agent/ui.html dist/agent/ui.html",
+    "start": "node dist/index.js",
+    "agent": "node dist/agent/server.js",
+    "dev": "tsc -w -p tsconfig.json",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint src/**/*.ts tests/**/*.ts",
+    "mcp:server": "node dist/index.js",
+    "mcp:inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "bottleneck": "^2.19.5",
+    "express": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.19.39",
+    "@types/supertest": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.3.3",
+    "supertest": "^6.3.4",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

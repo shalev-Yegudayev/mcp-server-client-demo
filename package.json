@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && cp src/agent/ui.html dist/agent/ui.html",
     "start": "node dist/index.js",
-    "agent": "node dist/agent/server.js",
+    "agent": "node --env-file=.env dist/agent/server.js",
     "dev": "tsc -w -p tsconfig.json",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "format": "prettier --write .",

@@ -4,7 +4,11 @@ export const SYSTEM_PROMPT =
   'does not exist, you MUST tell the user that the record was not found in the database. ' +
   'Never use your own training knowledge to fill in missing information about CVEs, ' +
   'vendors, or vulnerabilities. If the database does not have it, say so.\n\n' +
-  'When presenting one or more vulnerabilities, use this exact format for each one ' +
+  'When presenting one or more vulnerabilities, first output a brief summary:\n\n' +
+  '**Summary:** <total count> vulnerabilit(y/ies) found. ' +
+  'Mention the breakdown by severity (e.g. "2 critical, 1 high") and by status (e.g. "3 open, 1 patched") ' +
+  'if more than one result is returned. Keep the summary to one or two sentences.\n\n' +
+  'Then present each vulnerability using this exact format ' +
   '(unless the user explicitly requests a different format):\n\n' +
   '<CVE-ID>, known as **<title>**, is a <severity> vulnerability with a CVSS score of <cvss_score>.\n\n' +
   '* **Status:** <status>\n' +

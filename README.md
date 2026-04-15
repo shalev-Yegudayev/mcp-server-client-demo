@@ -25,6 +25,8 @@ npm start
 | `npm run agent`  | Run the Gemini agent server    |
 | `npm test`       | Jest                           |
 | `npm run format` | Prettier                       |
+| `npm run lint`   | ESLint                         |
+| `npm run mcp:inspect` | Launch MCP Inspector      |
 
 ## Project Layout
 
@@ -37,7 +39,14 @@ src/
   rateLimiter.ts   token bucket (100/s, 50 concurrent)
   sanitization.ts  prompt-injection defense for free-text fields
   tools/           one file per tool
-  agent/           Phase 2: Express + Gemini agent
+agent/             Phase 2: Express + Gemini agent
+  server.ts        Express app, /ask endpoint
+  gemini.ts        Gemini client + agentic loop
+  mcpClient.ts     spawns and talks to the MCP server
+  systemPrompt.ts  analyst-facing system prompt
+  validation.ts    request validation + timeout helpers
+  rateLimiter.ts   per-IP request limiter
+  ui/              static browser UI
 tests/
 vendors.db  vulnerabilities.db
 ```
@@ -90,7 +99,7 @@ An Express server + Gemini agent that takes natural language questions, calls th
 ### Setup
 
 1. Get a free key from [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. `export GEMINI_API_KEY=your_key`
+2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`)
 3. `npm run build && npm run agent`
 4. Open http://localhost:3000
 

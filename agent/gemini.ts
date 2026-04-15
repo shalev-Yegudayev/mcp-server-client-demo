@@ -14,12 +14,45 @@ const MAX_TOOL_RESULT_BYTES = 8192;
 
 const MAX_ITERATIONS = 10;
 
+// Gemini's FunctionDeclarationSchema is a strict subset of JSON Schema.
+// Strip fields it rejects ($schema, additionalProperties, etc.) before sending.
+function toGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const allowed = new Set([
+    'type',
+    'description',
+    'properties',
+    'required',
+    'items',
+    'enum',
+    'format',
+    'nullable',
+  ]);
+  const result: Record<string, unknown> = {};
+
+  for (const key of Object.keys(schema)) {
+    if (!allowed.has(key)) continue;
+    const value = schema[key];
+    if (key === 'properties' && value && typeof value === 'object') {
+      const cleaned: Record<string, unknown> = {};
+      for (const [propKey, propVal] of Object.entries(value as Record<string, unknown>)) {
+        cleaned[propKey] = toGeminiSchema(propVal as Record<string, unknown>);
+      }
+      result[key] = cleaned;
+    } else if (key === 'items' && value && typeof value === 'object') {
+      result[key] = toGeminiSchema(value as Record<string, unknown>);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 function buildFunctionDeclarations(tools: Tool[]): FunctionDeclaration[] {
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parameters: tool.inputSchema as any,
+    parameters: toGeminiSchema(tool.inputSchema) as any,
   }));
 }
 
@@ -28,7 +61,9 @@ function truncateIfNeeded(toolName: string, result: unknown): unknown {
   const bytes = Buffer.byteLength(json, 'utf8');
   if (bytes <= MAX_TOOL_RESULT_BYTES) return result;
 
-  console.warn(`Tool ${toolName} returned ${bytes} bytes (max ${MAX_TOOL_RESULT_BYTES}). Truncating.`);
+  console.warn(
+    `Tool ${toolName} returned ${bytes} bytes (max ${MAX_TOOL_RESULT_BYTES}). Truncating.`,
+  );
 
   if (Array.isArray(result)) {
     return {
@@ -49,14 +84,15 @@ export async function ask(question: string, mcpClient: McpClient): Promise<strin
   const tools = await mcpClient.listTools();
 
   const model = gemini.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.1-flash-lite-preview',
     tools: [{ functionDeclarations: buildFunctionDeclarations(tools) }],
   });
 
   const chat = model.startChat({ history: [] });
 
+  // sendMessage returns GenerateContentResult; functionCalls/text live on .response
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let response: any = await chat.sendMessage(question);
+  let response: any = (await chat.sendMessage(question)).response;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     const functionCalls = response.functionCalls();
@@ -74,12 +110,18 @@ export async function ask(question: string, mcpClient: McpClient): Promise<strin
     );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    response = await chat.sendMessage(
-      toolResults.map((tr) => ({ functionResponse: { name: tr.name, response: tr.response } }) as any),
-    );
+    response = (
+      await chat.sendMessage(
+        toolResults.map(
+          (tr) => ({ functionResponse: { name: tr.name, response: tr.response } }) as any,
+        ),
+      )
+    ).response;
   }
 
   const text = response.text();
   const hitLimit = response.functionCalls()?.length > 0;
-  return hitLimit ? text + '\n\n[Note: Query required too many steps. Some analysis may be incomplete.]' : text;
+  return hitLimit
+    ? text + '\n\n[Note: Query required too many steps. Some analysis may be incomplete.]'
+    : text;
 }

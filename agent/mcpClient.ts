@@ -1,6 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { spawn, type ChildProcess } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,36 +11,25 @@ interface Tool {
 
 // How long to wait for the MCP server to accept a connection before giving up.
 const CONNECTION_TIMEOUT_MS = 5000;
-// How long to wait for the process to exit gracefully before sending SIGKILL.
-const KILL_GRACE_PERIOD_MS = 5000;
 
 export class McpClient {
   private client: Client | null = null;
-  private process: ChildProcess | null = null;
   private transport: StdioClientTransport | null = null;
 
   async connect(): Promise<void> {
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const serverPath = join(__dirname, '../../dist/index.js');
 
-    this.process = spawn('node', [serverPath], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+    // SDK v1.x spawns the process internally — pass command+args, not pre-piped streams.
+    this.transport = new StdioClientTransport({
+      command: 'node',
+      args: [serverPath],
+      stderr: 'inherit', // surface MCP server errors in the agent terminal
     });
 
-    if (!this.process.stdout || !this.process.stdin) {
-      this.process.kill('SIGKILL');
-      throw new Error('Failed to setup stdio pipes for MCP server');
-    }
+    this.client = new Client({ name: 'vulnerability-agent', version: '0.1.0' });
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.transport = new StdioClientTransport({
-        stdout: this.process.stdout,
-        stdin: this.process.stdin,
-      } as any);
-
-      this.client = new Client({ name: 'vulnerability-agent', version: '0.1.0' });
-
       await Promise.race([
         this.client.connect(this.transport),
         new Promise<never>((_, reject) =>
@@ -52,7 +40,9 @@ export class McpClient {
         ),
       ]);
     } catch (error) {
-      await this.killProcess();
+      await this.transport.close();
+      this.client = null;
+      this.transport = null;
       throw error;
     }
   }
@@ -83,22 +73,11 @@ export class McpClient {
   async disconnect(): Promise<void> {
     if (this.client) {
       await this.client.close();
+      this.client = null;
     }
-    await this.killProcess();
-  }
-
-  private async killProcess(): Promise<void> {
-    if (!this.process) return;
-    this.process.kill('SIGTERM');
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        this.process?.kill('SIGKILL');
-        resolve();
-      }, KILL_GRACE_PERIOD_MS);
-      this.process!.on('exit', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
+    if (this.transport) {
+      await this.transport.close();
+      this.transport = null;
+    }
   }
 }

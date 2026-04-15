@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vulnerability Registry</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700&family=Lato:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <header>
+    <div class="wordmark">vuln<span>.</span>registry</div>
+    <p class="tagline">CVE lookup and vulnerability analysis</p>
+  </header>
+
+  <div class="card">
+    <label for="question">Ask a question</label>
+    <textarea id="question"
+      placeholder="e.g. What is CVE-2021-44228? / Show critical open vulnerabilities for Apache / Compare Linux Kernel vs Apache severity history"></textarea>
+    <div class="actions">
+      <button class="submit-btn" id="submitBtn">Ask</button>
+      <button class="clear-btn" id="clearBtn">Clear</button>
+    </div>
+    <p class="hint">Ctrl + Enter to submit</p>
+
+    <div class="loading" id="loading">
+      <div class="dot-pulse">
+        <span></span><span></span><span></span>
+      </div>
+      Looking it up…
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div class="answer-section" id="answerSection">
+      <label>Answer</label>
+      <div class="answer-text" id="answerText"></div>
+      <button class="trace-toggle" id="traceToggle">Show tool calls</button>
+      <div class="trace-content" id="traceContent"></div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>

@@ -1,7 +1,6 @@
 import express, { type Request, type Response } from 'express';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
 import Bottleneck from 'bottleneck';
 import { McpClient } from './mcpClient.js';
 import { ask as askGemini } from './gemini.js';
@@ -119,16 +118,7 @@ app.use('/api/ask', (req: Request, res: Response, next) => {
     });
 });
 
-app.use('/ui', express.static(join(__dirname, 'ui')));
-app.get('/', (_req: Request, res: Response) => {
-  try {
-    const html = readFileSync(join(__dirname, 'ui', 'index.html'), 'utf-8');
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-  } catch {
-    res.status(500).json({ error: 'Unable to load the user interface. Please check your installation.' });
-  }
-});
+app.use(express.static(join(__dirname, 'ui'), { index: 'index.html' }));
 
 app.post('/api/ask', async (req: Request, res: Response) => {
   const { question } = req.body as { question?: string };
@@ -171,6 +161,8 @@ app.post('/api/ask', async (req: Request, res: Response) => {
     res.status(status).json({ error: userMessage });
   }
 });
+
+await mcpClient.connect();
 
 const server = app.listen(port, () => {
   console.log(

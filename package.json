@@ -11,9 +11,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp -r src/agent/ui dist/agent/ui",
+    "build": "tsc -p tsconfig.json && tsc -p agent/tsconfig.json && node -e \"require('fs').cpSync('agent/ui','agent/dist/ui',{recursive:true})\"",
     "start": "node dist/index.js",
-    "agent": "node --env-file=.env dist/agent/server.js",
+    "agent": "node --env-file=.env agent/dist/server.js",
     "dev": "tsc -w -p tsconfig.json",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "format": "prettier --write .",

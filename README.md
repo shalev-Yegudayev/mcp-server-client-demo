@@ -17,16 +17,16 @@ npm start
 
 ## Scripts
 
-| Script           | Purpose                        |
-| ---------------- | ------------------------------ |
-| `npm run build`  | Compile TypeScript to `dist/`  |
-| `npm start`      | Run the MCP server (stdio)     |
-| `npm run dev`    | TypeScript watch build         |
-| `npm run agent`  | Run the Gemini agent server    |
-| `npm test`       | Jest                           |
-| `npm run format` | Prettier                       |
-| `npm run lint`   | ESLint                         |
-| `npm run mcp:inspect` | Launch MCP Inspector      |
+| Script                | Purpose                       |
+| --------------------- | ----------------------------- |
+| `npm run build`       | Compile TypeScript to `dist/` |
+| `npm start`           | Run the MCP server (stdio)    |
+| `npm run dev`         | TypeScript watch build        |
+| `npm run agent`       | Run the Gemini agent server   |
+| `npm test`            | Jest                          |
+| `npm run format`      | Prettier                      |
+| `npm run lint`        | ESLint                        |
+| `npm run mcp:inspect` | Launch MCP Inspector          |
 
 ## Project Layout
 
@@ -56,21 +56,27 @@ vendors.db  vulnerabilities.db
 All inputs are Zod-validated. List tools support `offset` + `limit` (default 25, max 100).
 
 ### `get_vulnerability_by_cve`
+
 Exact CVE lookup. Returns full details with vendor, or `{ found: false }`.
 
 ### `search_vulnerabilities`
+
 Filter by any combination of `severity`, `status`, `vendor_id`, `min_cvss`, `max_cvss`, `published_from`, `published_to`. Returns `{ total_matched, returned, offset, limit, results }`.
 
 ### `list_vendors`
+
 List vendors with optional `category` and `name_contains` (substring) filters.
 
 ### `get_vendor_vulnerabilities`
+
 All vulnerabilities for a `vendor_id`, optionally filtered by `status` and `severity`. O(1) via per-vendor index.
 
 ### `vulnerability_stats`
+
 Aggregate counts grouped by `severity`, `status`, `vendor`, or `year`.
 
 ### `top_critical_open`
+
 Highest-CVSS open vulnerabilities sorted descending. Default limit 10, max 50.
 
 ## Design Decisions
@@ -112,10 +118,6 @@ The agent discovers all 6 tools dynamically via `mcpClient.listTools()` on each 
 - Stateless, no chat history between requests
 - No streaming, full answer returned at once
 - Single user, no auth or session management
-
-## Scaling
-
-Current O(n) scans work fine up to the low tens of thousands. Beyond that: stream the parser, add secondary indexes on hot dimensions (severity, status, year), or drop in SQLite behind the `Store` interface.
 
 ## What I'd Add With More Time
 

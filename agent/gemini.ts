@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, type FunctionDeclaration } from '@google/generative-ai';
 import type { McpClient } from './mcpClient.js';
+import { SYSTEM_PROMPT } from './systemPrompt.js';
 
 interface Tool {
   name: string;
@@ -8,6 +9,7 @@ interface Tool {
 }
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
 
 // 8 KB ≈ 2k tokens at ~4 bytes/token; keeps Gemini context manageable per tool call.
 const MAX_TOOL_RESULT_BYTES = 8192;
@@ -84,8 +86,9 @@ export async function ask(question: string, mcpClient: McpClient): Promise<strin
   const tools = await mcpClient.listTools();
 
   const model = gemini.getGenerativeModel({
-    model: 'gemini-3.1-flash-lite-preview',
+    model: GEMINI_MODEL,
     tools: [{ functionDeclarations: buildFunctionDeclarations(tools) }],
+    systemInstruction: SYSTEM_PROMPT,
   });
 
   const chat = model.startChat({ history: [] });

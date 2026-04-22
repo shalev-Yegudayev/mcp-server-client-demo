@@ -14,9 +14,9 @@ export const SEVERITY_RANK: Record<Severity, number> = {
 export const STATUSES = ['open', 'patched'] as const;
 export type Status = (typeof STATUSES)[number];
 
-const YEAR_RE = /^\d{4}$/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const CVE_RE = /^CVE-\d{4}-\d{4,7}$/;
+const YEAR_RE = /^\d{4}$/; // Validates founded year as 4-digit format
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/; // Validates published date in ISO 8601 format (YYYY-MM-DD)
+const CVE_RE = /^CVE-\d{4}-\d{4,7}$/; // Validates CVE ID format: CVE-YYYY-NNNN (where N is 4-7 digits)
 
 export const VendorSchema = z.object({
   type: z.string().min(1),
@@ -71,6 +71,58 @@ function validateRows<T>(rows: Record<string, string>[], schema: z.ZodType<T>, l
   });
 }
 
+function buildVendorIndex(vendors: Vendor[]): Map<string, Vendor> {
+  const map = new Map<string, Vendor>();
+  for (const v of vendors) {
+    if (map.has(v.id)) throw new Error(`Duplicate vendor id: ${v.id}`);
+    map.set(v.id, v);
+  }
+  return map;
+}
+
+function filterOrphans(vulns: Vulnerability[], vendorsById: Map<string, Vendor>): Vulnerability[] {
+  let orphanCount = 0;
+  const valid = vulns.filter((v) => {
+    if (!vendorsById.has(v.vendor_id)) {
+      orphanCount++;
+      return false;
+    }
+    return true;
+  });
+  if (orphanCount > 0) {
+    console.error(
+      `Startup: dropped ${orphanCount} orphan vulnerabilities referencing unknown vendor_ids`,
+    );
+  }
+  return valid;
+}
+
+function buildVulnerabilityIndexes(vulns: Vulnerability[]): {
+  vulnsByVendorId: Map<string, Vulnerability[]>;
+  vulnsByCveId: Map<string, Vulnerability>;
+} {
+  const vulnsByVendorId = new Map<string, Vulnerability[]>();
+  const vulnsByCveId = new Map<string, Vulnerability>();
+  for (const v of vulns) {
+    if (!vulnsByVendorId.has(v.vendor_id)) vulnsByVendorId.set(v.vendor_id, []);
+    vulnsByVendorId.get(v.vendor_id)!.push(v);
+
+    const key = v.cve_id.toUpperCase();
+    if (vulnsByCveId.has(key)) throw new Error(`Duplicate cve_id: ${v.cve_id}`);
+    vulnsByCveId.set(key, v);
+  }
+  return { vulnsByVendorId, vulnsByCveId };
+}
+
+function computeOpenVulnerabilities(vulns: Vulnerability[]): Vulnerability[] {
+  return vulns
+    .filter((v) => v.status === 'open')
+    .sort(
+      (a, b) =>
+        b.cvss_score - a.cvss_score || SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+    );
+}
+
 export function loadStore(opts: LoadStoreOptions): Store {
   const vendorsRaw = readFileSync(opts.vendorsPath, 'utf8');
   const vulnsRaw = readFileSync(opts.vulnsPath, 'utf8');
@@ -84,50 +136,10 @@ export function buildStore(vendorsRaw: string, vulnsRaw: string): Store {
   const vendors = validateRows(vendorsParsed.rows, VendorSchema, 'vendor');
   const vulnerabilitiesAll = validateRows(vulnsParsed.rows, VulnerabilitySchema, 'vulnerability');
 
-  const vendorsById = new Map<string, Vendor>();
-  for (const v of vendors) {
-    if (vendorsById.has(v.id)) {
-      throw new Error(`Duplicate vendor id: ${v.id}`);
-    }
-    vendorsById.set(v.id, v);
-  }
-
-  // Ignore orphan(no vendor_id) records.
-  const vulnerabilities: Vulnerability[] = [];
-  let orphanCount = 0;
-  for (const v of vulnerabilitiesAll) {
-    if (!vendorsById.has(v.vendor_id)) {
-      orphanCount++;
-      continue;
-    }
-    vulnerabilities.push(v);
-  }
-  if (orphanCount > 0) {
-    console.error(
-      `Startup: dropped ${orphanCount} orphan vulnerabilities referencing unknown vendor_ids`,
-    );
-  }
-
-  const vulnsByVendorId = new Map<string, Vulnerability[]>();
-  const vulnsByCveId = new Map<string, Vulnerability>();
-  for (const v of vulnerabilities) {
-    const bucket = vulnsByVendorId.get(v.vendor_id) ?? [];
-    bucket.push(v);
-    vulnsByVendorId.set(v.vendor_id, bucket);
-
-    const key = v.cve_id.toUpperCase();
-    if (vulnsByCveId.has(key)) {
-      throw new Error(`Duplicate cve_id: ${v.cve_id}`);
-    }
-    vulnsByCveId.set(key, v);
-  }
-
-  const openVulnsByScore = vulnerabilities
-    .filter((v) => v.status === 'open')
-    .sort(
-      (a, b) =>
-        b.cvss_score - a.cvss_score || SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
-    );
+  const vendorsById = buildVendorIndex(vendors);
+  const vulnerabilities = filterOrphans(vulnerabilitiesAll, vendorsById);
+  const { vulnsByVendorId, vulnsByCveId } = buildVulnerabilityIndexes(vulnerabilities);
+  const openVulnsByScore = computeOpenVulnerabilities(vulnerabilities);
 
   return {
     vendorsById,
@@ -135,9 +147,6 @@ export function buildStore(vendorsRaw: string, vulnsRaw: string): Store {
     vulnsByVendorId,
     vulnsByCveId,
     openVulnsByScore,
-    meta: {
-      vendorsVersion: vendorsParsed.version,
-      vulnsVersion: vulnsParsed.version,
-    },
+    meta: { vendorsVersion: vendorsParsed.version, vulnsVersion: vulnsParsed.version },
   };
 }

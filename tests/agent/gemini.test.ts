@@ -4,14 +4,14 @@ import { jest } from '@jest/globals';
 describe('Gemini Agent', () => {
   describe('module structure', () => {
     it('should export ask function', async () => {
-      const { ask } = await import('../../src/agent/gemini.js');
+      const { ask } = await import('../../agent/gemini.js');
       expect(typeof ask).toBe('function');
     });
   });
 
   describe('ask function', () => {
     it('should be an async function that accepts a question and mcpClient', async () => {
-      const { ask } = await import('../../src/agent/gemini.js');
+      const { ask } = await import('../../agent/gemini.js');
 
       // Create a minimal mock
       const mockClient = {
@@ -32,7 +32,7 @@ describe('Gemini Agent', () => {
     });
 
     it('should throw if mcpClient.listTools fails', async () => {
-      const { ask } = await import('../../src/agent/gemini.js');
+      const { ask } = await import('../../agent/gemini.js');
 
       const mockClient = {
         listTools: async () => {
@@ -47,7 +47,7 @@ describe('Gemini Agent', () => {
     });
 
     it('should handle empty questions', async () => {
-      const { ask } = await import('../../src/agent/gemini.js');
+      const { ask } = await import('../../agent/gemini.js');
 
       const mockClient = {
         listTools: async () => [],
@@ -65,7 +65,7 @@ describe('Gemini Agent', () => {
     });
 
     it('should handle very long questions', async () => {
-      const { ask } = await import('../../src/agent/gemini.js');
+      const { ask } = await import('../../agent/gemini.js');
 
       const longQuestion = 'Q'.repeat(1000);
       const mockClient = {

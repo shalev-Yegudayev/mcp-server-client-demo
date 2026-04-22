@@ -29,6 +29,7 @@ function parseFormat(spec: string, lineNo: number): string[] {
   return columns;
 }
 
+// Validates version format (x.y): one or more digits, dot, one or more digits.
 function parseVersion(raw: string, lineNo: number): string {
   if (!/^\d+\.\d+$/.test(raw)) {
     throw new ParseError(`Invalid VERSION format: "${raw}" (expected x.y).`, lineNo);
@@ -36,11 +37,7 @@ function parseVersion(raw: string, lineNo: number): string {
   return raw;
 }
 
-function parseRow(
-  trimmed: string,
-  columns: string[],
-  lineNo: number,
-): Record<string, string> {
+function parseRow(trimmed: string, columns: string[], lineNo: number): Record<string, string> {
   const fields = trimmed.split('|');
   if (fields.length !== columns.length) {
     throw new ParseError(`Expected ${columns.length} columns, got ${fields.length}.`, lineNo);
@@ -62,7 +59,14 @@ export function parseDbFile(raw: string): ParsedDb {
     const trimmed = lines[i].trim();
     const lineNo = i + 1;
 
-    if (trimmed === '' || (trimmed.startsWith('#') && !trimmed.startsWith(FORMAT_PREFIX) && !trimmed.startsWith(VERSION_PREFIX))) continue;
+    // Skip empty lines and non-metadata comments; metadata lines (FORMAT/VERSION) are parsed next.
+    if (
+      trimmed === '' ||
+      (trimmed.startsWith('#') &&
+        !trimmed.startsWith(FORMAT_PREFIX) &&
+        !trimmed.startsWith(VERSION_PREFIX))
+    )
+      continue;
 
     if (trimmed.startsWith(FORMAT_PREFIX)) {
       columns = parseFormat(trimmed.slice(FORMAT_PREFIX.length).trim(), lineNo);

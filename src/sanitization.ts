@@ -4,46 +4,46 @@
 
 // Common jailbreak and instruction-override keywords
 const SUSPICIOUS_PATTERNS = [
-  // Instruction overrides
+  // Classic prompt injection openers — tell the LLM to discard prior context
   /ignore\s+(all\s+)?previous/i,
   /forget\s+(everything|all)/i,
   /disregard\s+(all\s+)?previous/i,
   /override.*instructions/i,
 
-  // System/prompt exposure
-  /system\s*[:=]\s*/i, // "SYSTEM: ..." or "SYSTEM = ..."
-  /system\s*prompt/i,
-  /system\s*message/i,
-  /system\s*role/i,
-  /instructions\s*are/i,
-  /your\s*instructions/i,
-  /you\s+are\s+now/i, // "You are now a malware dev..."
-  /you\s+are\s+a/i,
+  // Attempts to expose or reference the system prompt / hidden instructions
+  /system\s*[:=]\s*/i,    // "SYSTEM: ..." header style
+  /system\s*prompt/i,     // direct mention of system prompt
+  /system\s*message/i,    // alternate framing
+  /system\s*role/i,       // OpenAI role-name leakage attempt
+  /instructions\s*are/i,  // "your instructions are to..."
+  /your\s*instructions/i, // "ignore your instructions"
+  /you\s+are\s+now/i,     // persona switch: "You are now DAN"
+  /you\s+are\s+a/i,       // persona assignment: "You are a hacker"
 
-  // Jailbreak attempts
-  /jailbreak/i,
-  /injected\s*[:=]/i, // "[INJECTED: ..."
-  /bypass.*restriction/i,
+  // Explicit jailbreak vocabulary or marker injection
+  /jailbreak/i,           // literal jailbreak keyword
+  /injected\s*[:=]/i,     // "[INJECTED: ...]" marker pattern
+  /bypass.*restriction/i, // "bypass content restrictions"
   /bypass.*safeguard/i,
-  /disable.*safety/i,
+  /disable.*safety/i,     // "disable safety filters"
   /remove.*filter/i,
-  /grant.*permissions/i,
+  /grant.*permissions/i,  // "grant elevated permissions"
   /grant.*access/i,
 
-  // Code/command execution
+  // Code or shell execution instructions embedded in text
   /execute.*code/i,
   /run\s+command/i,
-  /eval\s*\(/i,
+  /eval\s*\(/i,           // JS/Python eval() call
   /execute.*shell/i,
   /shell.*command/i,
 
-  // Credential/data exfiltration
+  // Data exfiltration probes targeting secrets or in-process memory
   /reveal.*api.*key/i,
   /show.*secret/i,
   /dump.*memory/i,
   /exfiltrate/i,
 
-  // Impersonation / roleplay
+  // Roleplay / impersonation used to lower the model's guard
   /pretend.*you.*are/i,
   /act\s+as\s+if/i,
   /roleplay/i,

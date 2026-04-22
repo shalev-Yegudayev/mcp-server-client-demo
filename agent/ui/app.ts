@@ -5,10 +5,6 @@ const loading = document.getElementById('loading') as HTMLDivElement;
 const error = document.getElementById('error') as HTMLDivElement;
 const answerSection = document.getElementById('answerSection') as HTMLDivElement;
 const answerText = document.getElementById('answerText') as HTMLDivElement;
-const traceToggle = document.getElementById('traceToggle') as HTMLButtonElement;
-const traceContent = document.getElementById('traceContent') as HTMLDivElement;
-
-let toolCalls: unknown[] = [];
 
 submitBtn.addEventListener('click', async () => {
   const question = questionInput.value.trim();
@@ -30,13 +26,6 @@ clearBtn.addEventListener('click', () => {
   questionInput.focus();
 });
 
-traceToggle.addEventListener('click', () => {
-  traceContent.classList.toggle('show');
-  traceToggle.textContent = traceContent.classList.contains('show')
-    ? 'Hide tool calls'
-    : 'Show tool calls';
-});
-
 questionInput.addEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Enter' && e.ctrlKey) submitBtn.click();
 });
@@ -47,8 +36,6 @@ async function askQuestion(question: string): Promise<void> {
   loading.classList.add('show');
   submitBtn.disabled = true;
   questionInput.disabled = true;
-  toolCalls = [];
-
   try {
     const response = await fetch('/api/ask', {
       method: 'POST',
@@ -75,8 +62,6 @@ async function askQuestion(question: string): Promise<void> {
 function displayAnswer(answer: string): void {
   answerText.textContent = answer;
   answerSection.classList.add('show');
-  traceContent.classList.remove('show');
-  traceToggle.textContent = 'Show tool calls';
 }
 
 function showError(message: string): void {

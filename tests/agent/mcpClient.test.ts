@@ -1,5 +1,4 @@
-import { jest } from '@jest/globals';
-import { McpClient } from '../../src/agent/mcpClient.js';
+import { McpClient } from '../../agent/mcpClient.js';
 
 describe('McpClient', () => {
   describe('instance', () => {

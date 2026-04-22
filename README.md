@@ -127,8 +127,8 @@ The agent discovers all 6 tools dynamically via `mcpClient.listTools()` on each 
 - **Data integrity checks** at startup (checksums, size bounds) to detect tampered `.db` files.
 - **Distributed rate limiting** via Redis for multi-instance deployments.
 - **Auth / identity** if the transport moves beyond stdio, a networked transport would need API keys or JWT to identify callers.
-- **Streamable HTTP transport** to allow remote clients to connect without spawning a subprocess.
-- **Streaming responses** from Gemini to the browser for long queries.
+- **Streamable HTTP transport with streaming responses** to allow remote clients to connect without spawning a subprocess and stream Gemini answers to the browser for long queries.
+- **Remote data sources** — replace local `.db` file reads with a remote database (PostgreSQL, S3-hosted files, or a streaming CDC feed) so the MCP server can serve live, centrally-managed vulnerability data without redeployment.
 - **Security monitoring** for suspicious patterns: burst queries, repeated errors, unusual filter combinations.
 
 ### Analyst-Facing Capabilities

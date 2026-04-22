@@ -1,4 +1,3 @@
-import { jest } from '@jest/globals';
 import request from 'supertest';
 import express, { type Application } from 'express';
 

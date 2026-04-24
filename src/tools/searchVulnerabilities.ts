@@ -60,30 +60,34 @@ export function registerSearchVulnerabilities(server: McpServer, store: Store): 
       },
     },
     safeHandlerWithRateLimit((args: Input) => {
-        const offset = args.offset ?? 0;
-        const limit = args.limit ?? DEFAULT_LIMIT;
-        const pool = args.vendor_id
-          ? (store.vulnsByVendorId.get(args.vendor_id) ?? [])
-          : store.vulnerabilities;
-        const matched = pool.filter((v) => {
-          if (args.severity && v.severity !== args.severity) return false;
-          if (args.status && v.status !== args.status) return false;
-          if (args.min_cvss !== undefined && v.cvss_score < args.min_cvss) return false;
-          if (args.max_cvss !== undefined && v.cvss_score > args.max_cvss) return false;
-          if (args.published_from && v.published < args.published_from) return false;
-          if (args.published_to && v.published > args.published_to) return false;
-          return true;
-        });
-        const results = matched
-          .slice(offset, offset + limit)
-          .map((v) => shapeVulnerability(v, store.vendorsById.get(v.vendor_id)));
-        return {
-          total_matched: matched.length,
-          returned: results.length,
-          offset,
-          limit,
-          results,
-        };
-      }),
+      const offset = args.offset ?? 0;
+      const limit = args.limit ?? DEFAULT_LIMIT;
+
+      // Use vendor index for O(1) pre-filtering when vendor_id is provided
+      const pool = args.vendor_id
+        ? (store.vulnsByVendorId.get(args.vendor_id) ?? [])
+        : store.vulnerabilities;
+
+      const matched = pool.filter((v) => {
+        if (args.severity && v.severity !== args.severity) return false;
+        if (args.status && v.status !== args.status) return false;
+        if (args.min_cvss !== undefined && v.cvss_score < args.min_cvss) return false;
+        if (args.max_cvss !== undefined && v.cvss_score > args.max_cvss) return false;
+        if (args.published_from && v.published < args.published_from) return false;
+        if (args.published_to && v.published > args.published_to) return false;
+        return true;
+      });
+
+      const page = matched.slice(offset, offset + limit);
+      const results = page.map((v) => shapeVulnerability(v, store.vendorsById.get(v.vendor_id)));
+
+      return {
+        total_matched: matched.length,
+        returned: results.length,
+        offset,
+        limit,
+        results,
+      };
+    }),
   );
 }

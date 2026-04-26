@@ -1,4 +1,4 @@
-import { validateQuestion, withTimeout } from '../../agent/validation.js';
+import { validateQuestion } from '../../agent/validation.js';
 
 describe('validateQuestion', () => {
   it('empty string is invalid (regex requires at least one character)', () => {
@@ -52,26 +52,3 @@ describe('validateQuestion', () => {
   });
 });
 
-describe('withTimeout', () => {
-  it('returns the resolved value when the promise resolves before the timeout', async () => {
-    const result = await withTimeout(Promise.resolve(42), 1000);
-    expect(result).toBe(42);
-  });
-
-  it('rejects when the promise does not resolve before the timeout', async () => {
-    const neverResolves = new Promise<never>(() => {});
-    await expect(withTimeout(neverResolves, 1)).rejects.toBeDefined();
-  });
-
-  it('rejection from a timeout is a DOMException with name TimeoutError', async () => {
-    const neverResolves = new Promise<never>(() => {});
-    let caughtError: unknown;
-    try {
-      await withTimeout(neverResolves, 1);
-    } catch (e) {
-      caughtError = e;
-    }
-    expect(caughtError).toBeInstanceOf(DOMException);
-    expect((caughtError as DOMException).name).toBe('TimeoutError');
-  });
-});

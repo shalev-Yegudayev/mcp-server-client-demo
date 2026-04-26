@@ -1,89 +1,20 @@
 import { jest } from '@jest/globals';
 
 // ── ESM mock setup ────────────────────────────────────────────────────────────
-// Must be called before any import that transitively loads @google/generative-ai.
+// Must be called before any import that transitively loads @google/genai.
 // jest.unstable_mockModule intercepts the module when gemini.ts is dynamically imported below.
 
 const mockSendMessage = jest.fn<() => Promise<any>>();
-const mockStartChat = jest.fn<() => any>(() => ({ sendMessage: mockSendMessage }));
-const mockGetGenerativeModel = jest.fn<() => any>(() => ({ startChat: mockStartChat }));
+const mockChatsCreate = jest.fn<() => any>(() => ({ sendMessage: mockSendMessage }));
 
-jest.unstable_mockModule('@google/generative-ai', () => ({
-  GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: mockGetGenerativeModel,
+jest.unstable_mockModule('@google/genai', () => ({
+  GoogleGenAI: jest.fn().mockImplementation(() => ({
+    chats: { create: mockChatsCreate },
   })),
 }));
 
 // Dynamic import AFTER mock registration — gemini.ts now loads with the mocked SDK.
-const { ask, toGeminiSchema, truncateIfNeeded } = await import('../../agent/gemini.js');
-
-// ── toGeminiSchema ────────────────────────────────────────────────────────────
-
-describe('toGeminiSchema', () => {
-  it('strips fields not in the allowed set', () => {
-    const input = {
-      type: 'object',
-      $schema: 'http://json-schema.org/draft-07/schema',
-      additionalProperties: false,
-      description: 'A CVE search',
-      properties: {},
-    };
-    const result = toGeminiSchema(input);
-    expect(result).not.toHaveProperty('$schema');
-    expect(result).not.toHaveProperty('additionalProperties');
-    expect(result.type).toBe('object');
-    expect(result.description).toBe('A CVE search');
-  });
-
-  it('keeps all allowed fields: type, description, properties, required, items, enum, format, nullable', () => {
-    const input: Record<string, unknown> = {
-      type: 'string',
-      description: 'test',
-      required: ['id'],
-      items: { type: 'string' },
-      enum: ['open', 'patched'],
-      format: 'date',
-      nullable: true,
-    };
-    const result = toGeminiSchema(input);
-    expect(result).toEqual(input);
-  });
-
-  it('recursively cleans nested properties', () => {
-    const input = {
-      type: 'object',
-      properties: {
-        cve_id: {
-          type: 'string',
-          description: 'CVE identifier',
-          $comment: 'should be stripped',
-          pattern: 'CVE-.*', // not in allowed set
-        },
-      },
-    };
-    const result = toGeminiSchema(input);
-    const cveProp = (result.properties as any).cve_id;
-    expect(cveProp).not.toHaveProperty('$comment');
-    expect(cveProp).not.toHaveProperty('pattern');
-    expect(cveProp.type).toBe('string');
-    expect(cveProp.description).toBe('CVE identifier');
-  });
-
-  it('recursively cleans items schema', () => {
-    const input = {
-      type: 'array',
-      items: {
-        type: 'string',
-        minLength: 1, // not in allowed set → stripped
-        description: 'a CVE id',
-      },
-    };
-    const result = toGeminiSchema(input);
-    const items = result.items as Record<string, unknown>;
-    expect(items).not.toHaveProperty('minLength');
-    expect(items.description).toBe('a CVE id');
-  });
-});
+const { ask, truncateIfNeeded } = await import('../../agent/gemini.js');
 
 // ── truncateIfNeeded ──────────────────────────────────────────────────────────
 
@@ -121,8 +52,7 @@ describe('truncateIfNeeded', () => {
 describe('ask', () => {
   beforeEach(() => {
     mockSendMessage.mockReset();
-    mockStartChat.mockClear();
-    mockGetGenerativeModel.mockClear();
+    mockChatsCreate.mockClear();
   });
 
   function makeMockClient(tools: unknown[] = []) {
@@ -133,11 +63,7 @@ describe('ask', () => {
   }
 
   it('no tool calls → returns response text directly', async () => {
-    const mockResponse = {
-      functionCalls: jest.fn().mockReturnValue([]),
-      text: jest.fn().mockReturnValue('Here is the answer'),
-    };
-    mockSendMessage.mockResolvedValue({ response: mockResponse });
+    mockSendMessage.mockResolvedValue({ functionCalls: [], text: 'Here is the answer' });
 
     const client = makeMockClient();
     const result = await ask('What is CVE-2021-44228?', client as any);
@@ -147,24 +73,12 @@ describe('ask', () => {
   });
 
   it('one round of tool calls → tool result sent back → returns final text', async () => {
-    // First response: has a function call
-    const firstResponse = {
-      functionCalls: jest
-        .fn()
-        .mockReturnValueOnce([
-          { name: 'get_vulnerability_by_cve', args: { cve_id: 'CVE-2021-44228' } },
-        ])
-        .mockReturnValue([]),
-      text: jest.fn().mockReturnValue(''),
-    };
-    // Second response: no function calls, has final text
-    const finalResponse = {
-      functionCalls: jest.fn().mockReturnValue([]),
-      text: jest.fn().mockReturnValue('Log4Shell is critical.'),
-    };
     mockSendMessage
-      .mockResolvedValueOnce({ response: firstResponse })
-      .mockResolvedValueOnce({ response: finalResponse });
+      .mockResolvedValueOnce({
+        functionCalls: [{ id: 'c1', name: 'get_vulnerability_by_cve', args: { cve_id: 'CVE-2021-44228' } }],
+        text: '',
+      })
+      .mockResolvedValueOnce({ functionCalls: [], text: 'Log4Shell is critical.' });
 
     const client = makeMockClient();
     client.callTool.mockResolvedValue({ found: true, title: 'Log4Shell' });
@@ -176,22 +90,19 @@ describe('ask', () => {
       cve_id: 'CVE-2021-44228',
     });
     expect(mockSendMessage).toHaveBeenCalledTimes(2);
-    // Second sendMessage arg should contain the functionResponse
-    const secondArg = (mockSendMessage.mock.calls[1] as any[])[0];
-    expect(secondArg[0]).toMatchObject({
+    // Second sendMessage should carry the functionResponse parts under `message`
+    const secondCallArg = (mockSendMessage.mock.calls[1] as any[])[0];
+    expect(secondCallArg.message[0]).toMatchObject({
       functionResponse: { name: 'get_vulnerability_by_cve' },
     });
   });
 
   it('max 10 iterations reached → appends iteration-limit note', async () => {
     // Every response keeps returning a function call → loop never breaks naturally
-    const loopingResponse = {
-      functionCalls: jest
-        .fn()
-        .mockReturnValue([{ name: 'list_vendors', args: {} }]),
-      text: jest.fn().mockReturnValue('partial'),
-    };
-    mockSendMessage.mockResolvedValue({ response: loopingResponse });
+    mockSendMessage.mockResolvedValue({
+      functionCalls: [{ id: 'c1', name: 'list_vendors', args: {} }],
+      text: 'partial',
+    });
 
     const client = makeMockClient();
     client.callTool.mockResolvedValue([]);
@@ -203,14 +114,24 @@ describe('ask', () => {
     expect(mockSendMessage).toHaveBeenCalledTimes(11);
   });
 
-  it('listTools() failure propagates as rejection before Gemini is called', async () => {
+  it('listTools() failure propagates as rejection before Gemini chat is created', async () => {
     const client = {
       listTools: jest.fn<() => Promise<any>>().mockRejectedValue(new Error('MCP server offline')),
       callTool: jest.fn(),
     };
 
     await expect(ask('Any question', client as any)).rejects.toThrow('MCP server offline');
-    // getGenerativeModel should never be called if listTools fails first
-    expect(mockGetGenerativeModel).not.toHaveBeenCalled();
+    expect(mockChatsCreate).not.toHaveBeenCalled();
+  });
+
+  it('passes abortSignal through to each sendMessage call', async () => {
+    mockSendMessage.mockResolvedValue({ functionCalls: [], text: 'done' });
+
+    const controller = new AbortController();
+    const client = makeMockClient();
+    await ask('test', client as any, controller.signal);
+
+    const callArg = (mockSendMessage.mock.calls[0] as any[])[0];
+    expect(callArg.config?.abortSignal).toBe(controller.signal);
   });
 });

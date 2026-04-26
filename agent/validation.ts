@@ -1,16 +1,5 @@
 export const REQUEST_TIMEOUT_MS = 30000;
 
-// Races a promise against AbortSignal.timeout
-export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  const signal = AbortSignal.timeout(ms);
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-    }),
-  ]);
-}
-
 export function validateQuestion(question: string): { valid: boolean; error?: string } {
   const byteSize = Buffer.byteLength(question, 'utf8');
   if (byteSize > 8000) {

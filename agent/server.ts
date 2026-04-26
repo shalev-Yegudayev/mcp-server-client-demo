@@ -4,12 +4,12 @@ import { fileURLToPath } from 'url';
 import { McpClient } from './mcpClient.js';
 import { ask as askGemini } from './gemini.js';
 import { rateLimitMiddleware } from './rateLimiter.js';
-import { validateQuestion, withTimeout, REQUEST_TIMEOUT_MS } from './validation.js';
+import { validateQuestion, REQUEST_TIMEOUT_MS } from './validation.js';
 import { classifyError } from './errors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export type AskFn = (question: string, client: McpClient) => Promise<string>;
+export type AskFn = (question: string, client: McpClient, signal?: AbortSignal) => Promise<string>;
 
 export interface AppDeps {
   client?: McpClient;
@@ -45,7 +45,7 @@ export function createApp(deps: AppDeps = {}): Application {
     }
 
     try {
-      const answer = await withTimeout(askFn(question, client), REQUEST_TIMEOUT_MS);
+      const answer = await askFn(question, client, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
       res.json({ answer });
     } catch (error) {
       const isDomTimeout = error instanceof DOMException && error.name === 'TimeoutError';
@@ -106,6 +106,7 @@ if (process.env.NODE_ENV !== 'test') {
     try {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
+        server.closeIdleConnections();
       });
       console.log('HTTP server closed.');
 

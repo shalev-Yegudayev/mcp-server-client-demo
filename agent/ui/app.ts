@@ -1,10 +1,30 @@
+const MAX_QUESTION_LENGTH = 1000;
+
 const questionInput = document.getElementById('question') as HTMLTextAreaElement;
 const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
 const clearBtn = document.getElementById('clearBtn') as HTMLButtonElement;
 const loading = document.getElementById('loading') as HTMLDivElement;
-const error = document.getElementById('error') as HTMLDivElement;
+const errorEl = document.getElementById('error') as HTMLDivElement;
 const answerSection = document.getElementById('answerSection') as HTMLDivElement;
 const answerText = document.getElementById('answerText') as HTMLDivElement;
+
+interface AskResponse {
+  answer: string;
+}
+
+interface ErrorResponse {
+  error?: string;
+}
+
+const show = (el: Element) => el.classList.add('show');
+const hide = (el: Element) => el.classList.remove('show');
+
+function setLoading(active: boolean): void {
+  if (active) show(loading);
+  else hide(loading);
+  submitBtn.disabled = active;
+  questionInput.disabled = active;
+}
 
 submitBtn.addEventListener('click', async () => {
   const question = questionInput.value.trim();
@@ -12,8 +32,8 @@ submitBtn.addEventListener('click', async () => {
     showError('Please enter a question.');
     return;
   }
-  if (question.length > 1000) {
-    showError('Question is too long (max 1000 characters).');
+  if (question.length > MAX_QUESTION_LENGTH) {
+    showError(`Question is too long (max ${MAX_QUESTION_LENGTH} characters).`);
     return;
   }
   await askQuestion(question);
@@ -21,8 +41,8 @@ submitBtn.addEventListener('click', async () => {
 
 clearBtn.addEventListener('click', () => {
   questionInput.value = '';
-  error.classList.remove('show');
-  answerSection.classList.remove('show');
+  hide(errorEl);
+  hide(answerSection);
   questionInput.focus();
 });
 
@@ -31,11 +51,9 @@ questionInput.addEventListener('keydown', (e: KeyboardEvent) => {
 });
 
 async function askQuestion(question: string): Promise<void> {
-  error.classList.remove('show');
-  answerSection.classList.remove('show');
-  loading.classList.add('show');
-  submitBtn.disabled = true;
-  questionInput.disabled = true;
+  hide(errorEl);
+  hide(answerSection);
+  setLoading(true);
   try {
     const response = await fetch('/api/ask', {
       method: 'POST',
@@ -43,30 +61,28 @@ async function askQuestion(question: string): Promise<void> {
       body: JSON.stringify({ question }),
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const data = await response.json();
-      throw new Error((data as { error?: string }).error || 'Failed to get an answer');
+      throw new Error((data as ErrorResponse).error ?? 'Failed to get an answer');
     }
 
-    const data = await response.json();
-    displayAnswer((data as { answer: string }).answer);
+    displayAnswer((data as AskResponse).answer);
   } catch (err) {
     showError(err instanceof Error ? err.message : 'An unexpected error occurred.');
   } finally {
-    loading.classList.remove('show');
-    submitBtn.disabled = false;
-    questionInput.disabled = false;
+    setLoading(false);
   }
 }
 
 function displayAnswer(answer: string): void {
   answerText.textContent = answer;
-  answerSection.classList.add('show');
+  show(answerSection);
 }
 
 function showError(message: string): void {
-  error.textContent = message;
-  error.classList.add('show');
+  errorEl.textContent = message;
+  show(errorEl);
 }
 
 questionInput.focus();

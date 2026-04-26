@@ -1,8 +1,6 @@
 export const REQUEST_TIMEOUT_MS = 30000;
 
-// Races a promise against AbortSignal.timeout — the Node.js equivalent of a CancellationToken.
-// The underlying ask() call cannot be cancelled (Google AI SDK doesn't expose signal), but
-// the HTTP response is sent exactly once via normal throw/catch rather than headersSent guards.
+// Races a promise against AbortSignal.timeout
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   const signal = AbortSignal.timeout(ms);
   return Promise.race([
@@ -25,6 +23,7 @@ export function validateQuestion(question: string): { valid: boolean; error?: st
     return { valid: false, error: 'Question contains suspicious Unicode sequences.' };
   }
 
+  // Rejects anything that isn't a letter, digit, punctuation, space separator, or whitespace — blocks control chars, emoji, and symbols.
   if (!/^[\p{L}\p{N}\p{P}\p{Z}\n\r\t]+$/gu.test(question)) {
     return { valid: false, error: 'Question contains invalid characters.' };
   }

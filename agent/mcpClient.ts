@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { TextContent } from '@modelcontextprotocol/sdk/types.js';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -63,9 +64,8 @@ export class McpClient {
 
     const content = result.content;
     if (Array.isArray(content) && content.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const first = content[0] as any;
-      if (first?.type === 'text') return JSON.parse(first.text);
+      const first = content[0] as TextContent;
+      if (first.type === 'text') return JSON.parse(first.text);
     }
     return result;
   }

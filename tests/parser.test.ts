@@ -46,3 +46,50 @@ describe('parseDbFile', () => {
     expect(() => parseDbFile(raw)).toThrow(/duplicate column/);
   });
 });
+
+describe('parseDbFile edge cases', () => {
+  it('empty string throws ParseError with "Missing FORMAT"', () => {
+    expect(() => parseDbFile('')).toThrow(ParseError);
+    expect(() => parseDbFile('')).toThrow(/Missing FORMAT/);
+  });
+
+  it('only metadata with zero data rows returns empty rows array', () => {
+    const raw = `# FORMAT: type|id|name\n# VERSION: 2.0\n`;
+    const result = parseDbFile(raw);
+    expect(result.rows).toHaveLength(0);
+    expect(result.version).toBe('2.0');
+    expect(result.columns).toEqual(['type', 'id', 'name']);
+  });
+
+  it('CRLF line endings parse correctly — name field has no trailing \\r', () => {
+    const raw = `# FORMAT: type|id|name\r\n# VERSION: 1.0\r\nVENDOR|V1|Acme\r\n`;
+    const result = parseDbFile(raw);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].name).toBe('Acme');
+  });
+
+  it('data row before FORMAT throws ParseError about "before FORMAT"', () => {
+    // VERSION appears first, a data row second — columns is still null at the data row
+    const raw = `# VERSION: 1.0\nVENDOR|V1|x\n# FORMAT: type|id|name\n`;
+    expect(() => parseDbFile(raw)).toThrow(ParseError);
+    expect(() => parseDbFile(raw)).toThrow(/before FORMAT/);
+  });
+
+  it('empty field value in a data row is preserved as empty string', () => {
+    // Third column (cve_id) is empty — valid, not an error
+    const raw = `# FORMAT: type|id|cve_id|title\n# VERSION: 1.0\nVULN|X1||My Title\n`;
+    const result = parseDbFile(raw);
+    expect(result.rows[0].cve_id).toBe('');
+    expect(result.rows[0].title).toBe('My Title');
+  });
+
+  it('leading whitespace in field values is preserved; trailing whitespace on the last field is stripped by line trim', () => {
+    // line.trim() strips leading/trailing whitespace from the whole line before splitting,
+    // so the last field loses any trailing space. Internal and leading spaces are preserved.
+    const raw = `# FORMAT: type|id|name\n# VERSION: 1.0\nVENDOR|V1| Acme Corp \n`;
+    const result = parseDbFile(raw);
+    // Leading space on "name" field is preserved; trailing space is stripped by line.trim()
+    expect(result.rows[0].name).toBe(' Acme Corp');
+    expect(result.rows[0].id).toBe('V1');
+  });
+});

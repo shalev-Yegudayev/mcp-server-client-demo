@@ -46,3 +46,63 @@ describe('McpClient', () => {
     });
   });
 });
+
+describe('McpClient behavior with injected SDK client', () => {
+  it('callTool parses JSON from content[0].text when type is "text"', async () => {
+    const mockSdkClient = {
+      callTool: async () => ({
+        content: [{ type: 'text', text: JSON.stringify({ found: true, id: 'X1' }) }],
+      }),
+    };
+    const client = new McpClient();
+    // Bypass connect() by directly assigning the private field
+    (client as any).client = mockSdkClient;
+
+    const result = await client.callTool('get_vulnerability_by_cve', {
+      cve_id: 'CVE-2021-44228',
+    });
+    expect(result).toEqual({ found: true, id: 'X1' });
+  });
+
+  it('callTool returns raw result when content[0].type is not "text"', async () => {
+    const rawResult = { content: [{ type: 'image', data: 'base64stuff' }] };
+    const mockSdkClient = {
+      callTool: async () => rawResult,
+    };
+    const client = new McpClient();
+    (client as any).client = mockSdkClient;
+
+    const result = await client.callTool('some_tool', {});
+    expect(result).toBe(rawResult);
+  });
+
+  it('listTools shapes SDK response into name/description/inputSchema objects', async () => {
+    const mockSdkClient = {
+      listTools: async () => ({
+        tools: [
+          {
+            name: 'search_vulnerabilities',
+            description: 'Search for CVEs',
+            inputSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'list_vendors',
+            description: undefined, // missing description → should default to ''
+            inputSchema: { type: 'object' },
+          },
+        ],
+      }),
+    };
+    const client = new McpClient();
+    (client as any).client = mockSdkClient;
+
+    const tools = await client.listTools();
+    expect(tools).toHaveLength(2);
+    expect(tools[0]).toEqual({
+      name: 'search_vulnerabilities',
+      description: 'Search for CVEs',
+      inputSchema: { type: 'object', properties: {} },
+    });
+    expect(tools[1].description).toBe('');
+  });
+});

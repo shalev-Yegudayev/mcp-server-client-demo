@@ -18,7 +18,7 @@ const MAX_ITERATIONS = 10;
 
 // Gemini's FunctionDeclarationSchema is a strict subset of JSON Schema.
 // Strip fields it rejects ($schema, additionalProperties, etc.) before sending.
-function toGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
+export function toGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const allowed = new Set([
     'type',
     'description',
@@ -58,7 +58,7 @@ function buildFunctionDeclarations(tools: Tool[]): FunctionDeclaration[] {
   }));
 }
 
-function truncateIfNeeded(toolName: string, result: unknown): unknown {
+export function truncateIfNeeded(toolName: string, result: unknown): unknown {
   const json = JSON.stringify(result);
   const bytes = Buffer.byteLength(json, 'utf8');
   if (bytes <= MAX_TOOL_RESULT_BYTES) return result;

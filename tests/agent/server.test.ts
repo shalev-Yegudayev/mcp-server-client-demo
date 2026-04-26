@@ -1,194 +1,114 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
-import express, { type Application } from 'express';
 
-describe('Agent Server', () => {
-  let app: Application;
+// ── ESM mock setup ────────────────────────────────────────────────────────────
+jest.unstable_mockModule('../../agent/mcpClient.js', () => ({
+  McpClient: jest.fn().mockImplementation(() => ({
+    connect: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+    disconnect: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+    listTools: jest.fn<() => Promise<any>>().mockResolvedValue([]),
+    callTool: jest.fn<() => Promise<any>>().mockResolvedValue({}),
+  })),
+}));
 
-  beforeEach(() => {
-    app = express();
-    app.use(express.json());
+const { createApp } = await import('../../agent/server.js');
 
-    // Simple test route to validate input
-    app.post('/api/ask', (req, res) => {
-      const { question } = req.body as { question?: string };
+// ── suppress expected error logs ─────────────────────────────────────────────
+beforeEach(() => jest.spyOn(console, 'error').mockImplementation(() => {}));
+afterEach(() => jest.restoreAllMocks());
 
-      if (!question || typeof question !== 'string') {
-        res.status(400).json({ error: 'Please provide a question.' });
-        return;
-      }
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-      if (question.trim().length === 0 || question.length > 1000) {
-        res.status(400).json({
-          error: 'Please enter a question (max 1000 characters).',
-        });
-        return;
-      }
+function makeDeps(ask?: (...args: any[]) => Promise<string>) {
+  const client = {
+    connect: jest.fn<() => Promise<any>>(),
+    disconnect: jest.fn<() => Promise<any>>(),
+    listTools: jest.fn<() => Promise<any>>(),
+    callTool: jest.fn<() => Promise<any>>(),
+  };
+  const askFn = ask ?? jest.fn<() => Promise<any>>().mockResolvedValue('Here is the answer.');
+  return { client: client as any, ask: askFn };
+}
 
-      // Mock successful response
-      res.json({ answer: 'Mock answer to: ' + question });
-    });
+// ── POST /api/ask ─────────────────────────────────────────────────────────────
 
-    app.get('/', (_req, res) => {
-      res.send('<html><body>Test UI</body></html>');
-    });
+describe('POST /api/ask', () => {
+  it('200 with answer when askFn resolves', async () => {
+    const deps = makeDeps();
+    const app = createApp(deps);
+    const res = await request(app).post('/api/ask').send({ question: 'What is Log4Shell?' });
+    expect(res.status).toBe(200);
+    expect(res.body.answer).toBe('Here is the answer.');
   });
 
-  describe('POST /api/ask', () => {
-    it('should accept valid questions', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: 'What is CVE-2021-44228?',
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('answer');
-    });
-
-    it('should reject empty questions', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: '',
-      });
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toMatch(/Please (enter|provide) a question/);
-    });
-
-    it('should reject questions that are only whitespace', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: '   \n\t   ',
-      });
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toContain('Please enter a question');
-    });
-
-    it('should reject questions without a question field', async () => {
-      const response = await request(app).post('/api/ask').send({});
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toContain('Please provide a question');
-    });
-
-    it('should reject questions longer than 1000 characters', async () => {
-      const longQuestion = 'Q'.repeat(1001);
-      const response = await request(app).post('/api/ask').send({
-        question: longQuestion,
-      });
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toContain('max 1000 characters');
-    });
-
-    it('should accept questions exactly at 1000 characters', async () => {
-      const question = 'Q'.repeat(1000);
-      const response = await request(app).post('/api/ask').send({
-        question,
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('answer');
-    });
-
-    it('should handle special characters in questions', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: 'What about CVE-2024-1234 & CVE-2024-5678?',
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('answer');
-    });
-
-    it('should handle unicode characters in questions', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: 'What vulnerabilities affect Linux 系统?',
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('answer');
-    });
-
-    it('should handle multiline questions', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: 'Show me:\n1. Critical CVEs\n2. Open vulnerabilities',
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('answer');
-    });
-
-    it('should reject non-string question values', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: 123,
-      });
-
-      expect(response.status).toBe(400);
-    });
-
-    it('should reject null question', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: null,
-      });
-
-      expect(response.status).toBe(400);
-    });
+  it('400 when question field is missing', async () => {
+    const app = createApp(makeDeps());
+    const res = await request(app).post('/api/ask').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/provide a question/i);
   });
 
-  describe('GET /', () => {
-    it('should serve the UI', async () => {
-      const response = await request(app).get('/');
-
-      expect(response.status).toBe(200);
-      expect(response.text).toContain('Test UI');
-    });
-
-    it('should set correct content type for HTML', async () => {
-      const response = await request(app).get('/');
-
-      expect(response.type).toMatch(/html/);
-    });
+  it('400 when question is whitespace-only', async () => {
+    const app = createApp(makeDeps());
+    const res = await request(app).post('/api/ask').send({ question: '   ' });
+    expect(res.status).toBe(400);
   });
 
-  describe('Error Handling', () => {
-    it('should handle missing Content-Type header', async () => {
-      const response = await request(app).post('/api/ask').send('invalid');
-
-      // Express will handle this
-      expect([400, 413]).toContain(response.status);
-    });
-
-    it('should handle malformed JSON', async () => {
-      const response = await request(app)
-        .post('/api/ask')
-        .set('Content-Type', 'application/json')
-        .send('{ invalid json }');
-
-      expect(response.status).toBe(400);
-    });
+  it('400 when question exceeds 1000 characters', async () => {
+    const app = createApp(makeDeps());
+    const res = await request(app).post('/api/ask').send({ question: 'Q'.repeat(1001) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/max 1000 characters/i);
   });
 
-  describe('Question Validation Edge Cases', () => {
-    it('should handle questions with exactly 1 character', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: 'Q',
-      });
+  it('400 when question contains invalid characters (null byte)', async () => {
+    const app = createApp(makeDeps());
+    const res = await request(app)
+      .post('/api/ask')
+      .send({ question: 'hello' + String.fromCharCode(0) + 'world' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid characters/i);
+  });
 
-      expect(response.status).toBe(200);
-    });
+  it('504 when askFn throws a DOMException TimeoutError', async () => {
+    const timeoutError = new DOMException('The operation was aborted.', 'TimeoutError');
+    const deps = makeDeps(jest.fn<() => Promise<any>>().mockRejectedValue(timeoutError));
+    const app = createApp(deps);
+    const res = await request(app).post('/api/ask').send({ question: 'slow question' });
+    expect(res.status).toBe(504);
+    expect(res.body.error).toMatch(/too long/i);
+  });
 
-    it('should trim leading/trailing whitespace before validating', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: '   Valid question   ',
-      });
+  it('503 when askFn throws ECONNREFUSED', async () => {
+    const deps = makeDeps(
+      jest
+        .fn<() => Promise<any>>()
+        .mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:3000')),
+    );
+    const app = createApp(deps);
+    const res = await request(app).post('/api/ask').send({ question: 'any question' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/MCP server/i);
+  });
 
-      expect(response.status).toBe(200);
-    });
+  it('503 when askFn throws a quota error', async () => {
+    const deps = makeDeps(
+      jest.fn<() => Promise<any>>().mockRejectedValue(new Error('quota exceeded')),
+    );
+    const app = createApp(deps);
+    const res = await request(app).post('/api/ask').send({ question: 'any question' });
+    expect(res.status).toBe(503);
+  });
 
-    it('should handle questions with tabs and newlines', async () => {
-      const response = await request(app).post('/api/ask').send({
-        question: '\t\nValid question\n\t',
-      });
-
-      // Should fail because after trim, it still has content
-      expect([200, 400]).toContain(response.status);
-    });
+  it('500 for unknown errors', async () => {
+    const deps = makeDeps(
+      jest
+        .fn<() => Promise<any>>()
+        .mockRejectedValue(new Error('something completely unknown XYZ')),
+    );
+    const app = createApp(deps);
+    const res = await request(app).post('/api/ask').send({ question: 'any question' });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/unexpected error/i);
   });
 });
